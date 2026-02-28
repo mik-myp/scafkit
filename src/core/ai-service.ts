@@ -25,10 +25,6 @@ const ALLOWED_COMMIT_TYPES = new Set([
   "revert"
 ]);
 
-interface NormalizeCommitSuggestionOptions {
-  requireAudienceBreakdown?: boolean;
-}
-
 export interface SetAiConfigInput {
   profileName?: string;
   baseURL?: string;
@@ -41,13 +37,13 @@ export interface SetAiConfigInput {
 function extractChangedFiles(diff: string): string[] {
   const fileSet = new Set<string>();
   for (const line of diff.split("\n")) {
-    const matched = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+    const matched = line.match(/^diff --git "?a\/(.+?)"? "?b\/(.+?)"?$/);
     if (!matched) {
       continue;
     }
 
-    const beforePath = matched[1];
-    const afterPath = matched[2];
+    const beforePath = matched[1]?.replace(/^"|"$/g, "");
+    const afterPath = matched[2]?.replace(/^"|"$/g, "");
     const resolved = afterPath !== "/dev/null" ? afterPath : beforePath;
     if (!resolved || resolved === "/dev/null") {
       continue;
@@ -55,6 +51,21 @@ function extractChangedFiles(diff: string): string[] {
 
     fileSet.add(resolved);
   }
+
+  if (fileSet.size === 0) {
+    for (const line of diff.split("\n")) {
+      const matched = line.match(/^\+\+\+ "?b\/(.+?)"?$/);
+      if (!matched) {
+        continue;
+      }
+      const file = matched[1]?.replace(/^"|"$/g, "");
+      if (!file || file === "/dev/null") {
+        continue;
+      }
+      fileSet.add(file);
+    }
+  }
+
   return [...fileSet];
 }
 
@@ -79,67 +90,229 @@ function truncateDiffForPrompt(diff: string, maxChars: number, cutHint: string):
   return `${normalized.slice(0, maxChars)}\n\n${cutHint}`;
 }
 
-function normalizeCommitBody(bodyRaw: string | undefined): string {
-  const lines = (bodyRaw || "")
-    .split(/\r?\n/g)
-    .map((line) => line.trim())
-    .filter(Boolean);
+function normalizeSingleLineText(input: string, maxChars = 30): string {
+  const normalized = input
+    .replace(/\r?\n/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/[。；;]+$/g, "")
+    .trim();
+  if (!normalized) {
+    return "";
+  }
+  const chars = Array.from(normalized);
+  return chars.slice(0, maxChars).join("");
+}
 
-  let visible = "";
-  let internal = "";
+interface ParsedCommitHeader {
+  type?: string;
+  scope?: string;
+  subject: string;
+}
 
-  for (const line of lines) {
-    if (line.startsWith("用户可见：")) {
-      visible = line.replace(/^用户可见：\s*/, "").trim();
+function unwrapCommitHeaderPrefix(rawSubject: string): ParsedCommitHeader {
+  let current = rawSubject.trim();
+  let extractedType: string | undefined;
+  let extractedScope: string | undefined;
+
+  const headerPattern =
+    /^(?<type>feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(?:\((?<scope>[^)]+)\))?:\s*(?<subject>.+)$/i;
+
+  for (let i = 0; i < 2; i += 1) {
+    const matched = current.match(headerPattern);
+    if (!matched?.groups) {
+      break;
+    }
+
+    const matchedType = matched.groups.type.toLowerCase();
+    const matchedScope = matched.groups.scope?.trim();
+    const matchedSubject = matched.groups.subject.trim();
+    if (!ALLOWED_COMMIT_TYPES.has(matchedType) || !matchedSubject) {
+      break;
+    }
+
+    extractedType = matchedType;
+    if (matchedScope && !extractedScope) {
+      extractedScope = matchedScope;
+    }
+    current = matchedSubject;
+  }
+
+  return {
+    type: extractedType,
+    scope: extractedScope,
+    subject: current
+  };
+}
+
+function inferScopeFromFiles(files: string[]): string | undefined {
+  const scores = new Map<string, number>();
+  const bump = (scope: string) => scores.set(scope, (scores.get(scope) ?? 0) + 1);
+
+  for (const file of files) {
+    if (file.startsWith("src/commands/git") || file.startsWith("src/core/git")) {
+      bump("git");
       continue;
     }
-    if (line.startsWith("内部优化：")) {
-      internal = line.replace(/^内部优化：\s*/, "").trim();
+    if (file.startsWith("src/commands/ai") || file.startsWith("src/core/ai")) {
+      bump("ai");
       continue;
     }
-
-    const normalized = line.replace(/^[-*]\s*/, "").trim();
-    if (!visible) {
-      visible = normalized;
+    if (file.startsWith("src/commands/init") || file.startsWith("src/core/project-generator")) {
+      bump("init");
       continue;
     }
-    if (!internal) {
-      internal = normalized;
+    if (file.startsWith("src/commands/template") || file.startsWith("src/core/template")) {
+      bump("template");
+      continue;
+    }
+    if (file.startsWith("src/core/hook") || file.startsWith("src/commands/hook")) {
+      bump("hook");
+      continue;
+    }
+    if (file.startsWith("src/db/")) {
+      bump("db");
+      continue;
+    }
+    if (file.startsWith("src/utils/")) {
+      bump("utils");
+      continue;
+    }
+    if (file.startsWith("tests/")) {
+      bump("test");
+      continue;
+    }
+    if (file.toLowerCase().includes("readme")) {
+      bump("docs");
+      continue;
     }
   }
 
-  const finalVisible = visible || "无明显用户可见变更";
-  const finalInternal = internal || "无明显内部优化";
-  return `用户可见：${finalVisible}\n内部优化：${finalInternal}`;
+  if (scores.size === 0) {
+    return undefined;
+  }
+
+  const sorted = [...scores.entries()].sort((a, b) => b[1] - a[1]);
+  return sorted[0]?.[0];
 }
 
-function normalizeCommitSuggestion(
-  input: Partial<CommitSuggestion> | undefined,
-  options: NormalizeCommitSuggestionOptions = {}
-): CommitSuggestion {
-  const type = input?.type?.trim().toLowerCase() || "chore";
-  const subject = (input?.subject?.trim() || "同步代码改动")
-    .replace(/[。；;]+$/g, "")
-    .replace(/\s+/g, " ");
-  const bodyRaw = input?.body?.trim() || undefined;
+function inferCommitType(files: string[]): string {
+  if (files.length === 0) {
+    return "chore";
+  }
+
+  const allDocs = files.every(
+    (file) =>
+      file.toLowerCase().includes("readme") || file.startsWith("docs/") || file.endsWith(".md")
+  );
+  if (allDocs) {
+    return "docs";
+  }
+
+  const allTests = files.every(
+    (file) =>
+      file.startsWith("tests/") ||
+      file.includes(".test.") ||
+      file.includes(".spec.")
+  );
+  if (allTests) {
+    return "test";
+  }
+
+  if (files.some((file) => file.startsWith("src/commands/") || file === "src/cli.ts")) {
+    return "feat";
+  }
+
+  if (files.some((file) => file.startsWith("src/core/") || file.startsWith("src/utils/"))) {
+    return "refactor";
+  }
+
+  return "chore";
+}
+
+function buildHeuristicCommitSuggestion(files: string[]): CommitSuggestion {
+  const userVisibleFiles = files.filter(
+    (file) =>
+      file.startsWith("src/commands/") ||
+      file === "src/cli.ts" ||
+      file.toLowerCase().includes("readme") ||
+      file.startsWith("docs/")
+  );
+
+  const internalFiles = files.filter((file) => !userVisibleFiles.includes(file));
+  const scope = inferScopeFromFiles(files);
+  const type = inferCommitType(files);
+  const scopeLabel = scope ?? "项目";
+
+  let subject = "";
+  if (files.length === 0) {
+    subject = "待人工复核本次代码改动";
+  } else if (type === "docs") {
+    subject = "更新文档说明与使用示例";
+  } else if (type === "test") {
+    subject = "补充测试覆盖关键变更";
+  } else if (userVisibleFiles.length > 0) {
+    subject = `完善${scopeLabel}相关命令与功能`;
+  } else if (internalFiles.length > 0) {
+    subject = `优化${scopeLabel}内部实现逻辑`;
+  } else {
+    subject = `更新${scopeLabel}相关实现`;
+  }
 
   return {
-    type: ALLOWED_COMMIT_TYPES.has(type) ? type : "chore",
-    scope: input?.scope?.trim() || undefined,
-    subject,
-    body: options.requireAudienceBreakdown
-      ? normalizeCommitBody(bodyRaw)
-      : (bodyRaw ?? undefined)
+    type,
+    scope,
+    subject: normalizeSingleLineText(subject, 30)
+  };
+}
+
+function isCommitSuggestionTooGeneric(suggestion: CommitSuggestion, files: string[]): boolean {
+  const subject = suggestion.subject.trim();
+
+  const genericSubjectPatterns = [
+    /^同步代码改动$/,
+    /^更新代码变更$/,
+    /^同步\d+个文件改动$/,
+    /^同步文件改动$/,
+    /^更新项目文件$/,
+    /^(同步|更新|调整|优化)(代码|实现|逻辑|改动)$/
+  ];
+
+  if (genericSubjectPatterns.some((pattern) => pattern.test(subject))) {
+    return true;
+  }
+
+  if (Array.from(subject).length < 6) {
+    return true;
+  }
+
+  if (files.length > 0 && subject.includes("待人工复核")) {
+    return true;
+  }
+
+  return false;
+}
+
+function normalizeCommitSuggestion(input: Partial<CommitSuggestion> | undefined): CommitSuggestion {
+  const inputType = input?.type?.trim().toLowerCase();
+  const inputScope = input?.scope?.trim();
+  const rawSubject = input?.subject?.trim() || "待人工复核本次代码改动";
+  const unwrapped = unwrapCommitHeaderPrefix(rawSubject);
+
+  const typeCandidate = unwrapped.type || inputType || "chore";
+  const type = ALLOWED_COMMIT_TYPES.has(typeCandidate) ? typeCandidate : "chore";
+  const scope = inputScope || unwrapped.scope || undefined;
+  const subject = normalizeSingleLineText(unwrapped.subject, 30);
+
+  return {
+    type,
+    scope,
+    subject: subject || "待人工复核本次代码改动"
   };
 }
 
 function createFallbackCommitSuggestion(diff: string): CommitSuggestion {
-  const fileCount = extractChangedFiles(diff).length;
-  return {
-    type: "chore",
-    subject: fileCount > 0 ? `同步 ${fileCount} 个文件改动` : "同步代码改动",
-    body: "用户可见：待人工复核\n内部优化：待人工复核"
-  };
+  const files = extractChangedFiles(diff);
+  return buildHeuristicCommitSuggestion(files);
 }
 
 export function createFallbackReviewResult(diff: string): ReviewResult {
@@ -148,9 +321,7 @@ export function createFallbackReviewResult(diff: string): ReviewResult {
     summary: `检测到 ${fileCount} 个文件的变更，建议在提交前手动复查核心逻辑与测试覆盖。`,
     riskItems: ["AI 返回不可解析，已降级为基础建议。"],
     testSuggestions: ["执行相关单元测试并手动验证关键路径。"],
-    commitSuggestion: normalizeCommitSuggestion(createFallbackCommitSuggestion(diff), {
-      requireAudienceBreakdown: true
-    })
+    commitSuggestion: normalizeCommitSuggestion(createFallbackCommitSuggestion(diff))
   };
 }
 
@@ -178,9 +349,7 @@ export function parseReviewResponse(rawText: string, diff: string): ReviewResult
       summary: summary || fallback.summary,
       riskItems: riskItems.length > 0 ? riskItems : fallback.riskItems,
       testSuggestions: testSuggestions.length > 0 ? testSuggestions : fallback.testSuggestions,
-      commitSuggestion: normalizeCommitSuggestion(parsed.commitSuggestion, {
-        requireAudienceBreakdown: true
-      })
+      commitSuggestion: normalizeCommitSuggestion(parsed.commitSuggestion)
     };
   } catch {
     return fallback;
@@ -188,9 +357,7 @@ export function parseReviewResponse(rawText: string, diff: string): ReviewResult
 }
 
 export function parseCommitSuggestionResponse(rawText: string, diff: string): CommitSuggestion {
-  const fallback = normalizeCommitSuggestion(createFallbackCommitSuggestion(diff), {
-    requireAudienceBreakdown: true
-  });
+  const fallback = normalizeCommitSuggestion(createFallbackCommitSuggestion(diff));
 
   try {
     const parsed = JSON.parse(rawText) as
@@ -204,9 +371,7 @@ export function parseCommitSuggestionResponse(rawText: string, diff: string): Co
         ? parsed.commitSuggestion
         : (parsed as Partial<CommitSuggestion>);
 
-    return normalizeCommitSuggestion(candidate, {
-      requireAudienceBreakdown: true
-    });
+    return normalizeCommitSuggestion(candidate);
   } catch {
     return fallback;
   }
@@ -221,11 +386,10 @@ function buildReviewSystemPrompt(): string {
     "summary: 中文字符串，1-2 句，先讲核心变更，再讲主要风险。",
     "riskItems: 中文字符串数组，按风险优先级排序，最多 5 条；无明显风险时返回空数组。",
     "testSuggestions: 中文字符串数组，给出可落地验证建议，最多 5 条。",
-    "commitSuggestion: 对象，包含 type/scope/subject/body。",
+    "commitSuggestion: 对象，包含 type/scope/subject。",
     "type 只能是 feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert。",
     "scope 可选，尽量使用受影响模块名（如 cli/template/git/hook）。",
-    "subject 必须是中文，20 字以内，使用动宾结构，不要句号。",
-    "body 必须是两行：第一行“用户可见：...”，第二行“内部优化：...”。",
+    "subject 必须是中文一句话，最多 30 字，使用动宾结构，不要句号。",
     "禁止编造不存在的改动，信息不足时明确标注“需人工复核”。"
   ].join("\n");
 }
@@ -252,14 +416,11 @@ function buildCommitSystemPrompt(): string {
     "你是发布工程中的提交信息生成助手。目标：生成可直接发布的中文 Conventional Commit。",
     "只允许输出合法 JSON 对象，不要输出 markdown、解释文本或代码块。",
     "你必须完整覆盖所有改动文件，不能遗漏关键模块；若改动很多，按功能域聚合描述。",
+    "提交信息必须具体，不允许使用“同步代码改动/更新代码变更/优化代码逻辑”等空泛描述。",
     "JSON 字段与约束：",
     "type: feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert 之一。",
     "scope: 可选，建议填写最主要模块名（如 init/template/ai/git）。",
-    "subject: 中文，20 字以内，动宾结构，禁止空泛词（如“优化代码”“调整逻辑”）。",
-    "body: 必须严格为两行：",
-    "第一行格式：用户可见：<面向用户或调用方可感知的变化；若无则写“无明显用户可见变更”>",
-    "第二行格式：内部优化：<重构、性能、结构、测试、稳定性等内部变化；若无则写“无明显内部优化”>",
-    "body 要简洁具体，可直接进入发布历史。",
+    "subject: 中文一句话，最多 30 字，动宾结构；必须体现具体模块或能力点。",
     "禁止编造不存在的改动，信息不足时写“待人工复核”。"
   ].join("\n");
 }
@@ -268,12 +429,42 @@ function buildCommitUserPrompt(diff: string, changedFiles: string[]): string {
   const truncated = truncateDiffForPrompt(
     diff,
     COMMIT_DIFF_MAX_CHARS,
-    "[... diff 已截断，请优先确保提交信息覆盖全部变更文件并区分用户可见/内部优化 ...]"
+    "[... diff 已截断，请优先确保提交信息覆盖全部变更文件并保持一句话总结 ...]"
   );
 
   return [
     "请基于以下 staged diff 生成一条可直接用于发布的提交信息。",
-    "要求：完整总结全部变更文件，区分用户可见变更与内部优化，简洁具体。",
+    "要求：完整总结全部变更文件，简洁具体，一句话概括。",
+    "要求：subject 不得使用“同步代码改动/更新代码变更”等泛化表述。",
+    "要求：subject 最多 30 字。",
+    `变更文件（共 ${changedFiles.length} 个）：`,
+    formatChangedFilesForPrompt(changedFiles),
+    "",
+    truncated
+  ].join("\n");
+}
+
+function buildCommitRetryUserPrompt(
+  diff: string,
+  changedFiles: string[],
+  previous: CommitSuggestion
+): string {
+  const previousMessage = formatConventionalCommit(previous);
+  const truncated = truncateDiffForPrompt(
+    diff,
+    COMMIT_DIFF_MAX_CHARS,
+    "[... diff 已截断，请优先给出具体模块/能力点并覆盖全部文件 ...]"
+  );
+
+  return [
+    "上一版提交信息过于泛化，请重写并严格满足以下要求。",
+    "1) subject 必须具体到模块或能力点，禁止“同步代码改动/更新代码变更/优化代码逻辑”类描述。",
+    "2) subject 必须为一句话，最多 30 字。",
+    "3) 仍需覆盖全部改动文件，不遗漏关键变更。",
+    "",
+    "上一版结果：",
+    previousMessage,
+    "",
     `变更文件（共 ${changedFiles.length} 个）：`,
     formatChangedFilesForPrompt(changedFiles),
     "",
@@ -456,18 +647,32 @@ export class AiService {
 
     const changedFiles = extractChangedFiles(diff);
     const { client, config } = await this.createClient();
-    const response = await client.chat.completions.create({
-      model: config.model,
-      temperature: 0,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: buildCommitSystemPrompt() },
-        { role: "user", content: buildCommitUserPrompt(diff, changedFiles) }
-      ]
-    });
+    const runCommitSuggestion = async (userPrompt: string): Promise<CommitSuggestion> => {
+      const response = await client.chat.completions.create({
+        model: config.model,
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: buildCommitSystemPrompt() },
+          { role: "user", content: userPrompt }
+        ]
+      });
+      const rawText = response.choices[0]?.message?.content || "";
+      return parseCommitSuggestionResponse(rawText, diff);
+    };
 
-    const rawText = response.choices[0]?.message?.content || "";
-    const suggestion = parseCommitSuggestionResponse(rawText, diff);
+    let suggestion = await runCommitSuggestion(buildCommitUserPrompt(diff, changedFiles));
+
+    if (isCommitSuggestionTooGeneric(suggestion, changedFiles)) {
+      suggestion = await runCommitSuggestion(
+        buildCommitRetryUserPrompt(diff, changedFiles, suggestion)
+      );
+    }
+
+    if (isCommitSuggestionTooGeneric(suggestion, changedFiles)) {
+      suggestion = normalizeCommitSuggestion(buildHeuristicCommitSuggestion(changedFiles));
+    }
+
     return formatConventionalCommit(suggestion);
   }
 }
