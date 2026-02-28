@@ -1,6 +1,7 @@
-import path from "node:path";
+﻿import path from "node:path";
 import os from "node:os";
 import fs from "fs-extra";
+import { simpleGit } from "simple-git";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resetDbForTests } from "../../src/db/store.js";
 import { TemplateService } from "../../src/core/template-service.js";
@@ -23,20 +24,26 @@ describe("template service + project generator", () => {
     }
   });
 
-  it("creates project from local template and renders variables", async () => {
-    const templateDir = path.join(tempRoot, "template-local");
-    await fs.ensureDir(templateDir);
+  it("creates project from git template and renders variables", async () => {
+    const templateRepoDir = path.join(tempRoot, "template-repo");
+    await fs.ensureDir(templateRepoDir);
     await fs.writeFile(
-      path.join(templateDir, "README.md.ejs"),
+      path.join(templateRepoDir, "README.md.ejs"),
       "# <%= projectName %>\nowner=<%= owner %>\n",
       "utf-8"
     );
 
+    const git = simpleGit(templateRepoDir);
+    await git.init();
+    await git.addConfig("user.name", "scafkit-test");
+    await git.addConfig("user.email", "scafkit-test@example.com");
+    await git.add(["README.md.ejs"]);
+    await git.commit("init template");
+
     const service = new TemplateService();
     const template = await service.addTemplate({
-      name: "local-template",
-      sourceType: "local",
-      source: templateDir,
+      name: "git-template",
+      source: templateRepoDir,
       variables: [{ key: "owner", required: true }]
     });
 

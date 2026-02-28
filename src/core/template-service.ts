@@ -1,18 +1,17 @@
-import path from "node:path";
+﻿import path from "node:path";
 import fs from "fs-extra";
 import { simpleGit } from "simple-git";
 import { randomUUID } from "node:crypto";
 import { readDb, writeDb } from "../db/store.js";
-import type { TemplateRecord, TemplateSourceType, TemplateVariable } from "../types.js";
-import { CliError } from "../utils/errors.js";
-import { getScafkitPaths, normalizePath } from "../utils/path.js";
-import { normalizeTemplateGitSource } from "../utils/git-source.js";
+import type { TemplateRecord, TemplateVariable } from "../types.js";
+import { asErrorMessage, CliError } from "../utils/errors.js";
+import { getScafkitPaths } from "../utils/path.js";
+import { buildTemplateGitSourceCandidates, normalizeTemplateGitSource } from "../utils/git-source.js";
 
 export interface AddTemplateInput {
   id?: string;
   name: string;
   description?: string;
-  sourceType: TemplateSourceType;
   source: string;
   branch?: string;
   subPath?: string;
@@ -32,23 +31,30 @@ function createTemplateId(): string {
   return `tpl_${randomUUID().replace(/-/g, "").slice(0, 10)}`;
 }
 
-async function ensureLocalTemplateExists(source: string): Promise<void> {
-  const resolved = normalizePath(source);
-  const exists = await fs.pathExists(resolved);
-  if (!exists) {
-    throw new CliError(`本地模板路径不存在: ${resolved}`);
-  }
-}
-
 function getTemplateCacheDir(templateId: string): string {
   return path.join(getScafkitPaths().templatesDir, templateId);
 }
 
-async function cloneGitTemplate(source: string, branch: string | undefined, targetDir: string): Promise<void> {
+async function cloneGitTemplate(
+  sourceCandidates: string[],
+  branch: string | undefined,
+  targetDir: string
+): Promise<string> {
   await fs.ensureDir(path.dirname(targetDir));
-  const git = simpleGit();
   const options = branch ? ["--branch", branch, "--single-branch"] : [];
-  await git.clone(source, targetDir, options);
+  const errors: string[] = [];
+
+  for (const source of sourceCandidates) {
+    await fs.remove(targetDir);
+    try {
+      await simpleGit().clone(source, targetDir, options);
+      return source;
+    } catch (error) {
+      errors.push(`${source}: ${asErrorMessage(error)}`);
+    }
+  }
+
+  throw new CliError(`模板仓库同步失败，已尝试:\n${errors.join("\n")}`);
 }
 
 export class TemplateService {
@@ -67,21 +73,12 @@ export class TemplateService {
   }
 
   async addTemplate(input: AddTemplateInput): Promise<TemplateRecord> {
-    if (input.sourceType !== "local" && input.sourceType !== "git") {
-      throw new CliError(`不支持的模板来源类型: ${String(input.sourceType)}`);
-    }
-    if (input.sourceType === "local") {
-      await ensureLocalTemplateExists(input.source);
-    }
-    const normalizedSource =
-      input.sourceType === "local" ? normalizePath(input.source) : normalizeTemplateGitSource(input.source);
-
+    const normalizedSource = normalizeTemplateGitSource(input.source);
     const now = new Date().toISOString();
     const record: TemplateRecord = {
       id: input.id || createTemplateId(),
       name: input.name,
       description: input.description,
-      sourceType: input.sourceType,
       source: normalizedSource,
       branch: input.branch,
       subPath: input.subPath,
@@ -107,15 +104,13 @@ export class TemplateService {
       throw new CliError("模板创建失败");
     }
 
-    if (record.sourceType === "git") {
-      try {
-        await this.syncTemplate(record.id);
-      } catch (error) {
-        await writeDb((draft) => {
-          draft.templates = draft.templates.filter((item) => item.id !== record.id);
-        });
-        throw error;
-      }
+    try {
+      await this.syncTemplate(record.id);
+    } catch (error) {
+      await writeDb((draft) => {
+        draft.templates = draft.templates.filter((item) => item.id !== record.id);
+      });
+      throw error;
     }
 
     return created;
@@ -124,13 +119,7 @@ export class TemplateService {
   async updateTemplate(id: string, input: UpdateTemplateInput): Promise<TemplateRecord> {
     const current = await this.getTemplateById(id);
     const updatedSource = input.source ?? current.source;
-    if (current.sourceType === "local" && input.source) {
-      await ensureLocalTemplateExists(updatedSource);
-    }
-    const normalizedSource =
-      current.sourceType === "local"
-        ? normalizePath(updatedSource)
-        : normalizeTemplateGitSource(updatedSource);
+    const normalizedSource = normalizeTemplateGitSource(updatedSource);
 
     const db = await writeDb((draft) => {
       const index = draft.templates.findIndex((item) => item.id === id);
@@ -160,35 +149,27 @@ export class TemplateService {
       throw new CliError("模板更新失败");
     }
 
-    if (result.sourceType === "git") {
-      await this.syncTemplate(result.id);
-    }
-
+    await this.syncTemplate(result.id);
     return result;
   }
 
   async removeTemplate(id: string): Promise<void> {
-    const template = await this.getTemplateById(id);
+    await this.getTemplateById(id);
     await writeDb((draft) => {
       draft.templates = draft.templates.filter((item) => item.id !== id);
     });
-    if (template.sourceType === "git") {
-      await fs.remove(getTemplateCacheDir(id));
-    }
+    await fs.remove(getTemplateCacheDir(id));
   }
 
   async syncTemplate(id: string): Promise<void> {
     const template = await this.getTemplateById(id);
-    if (template.sourceType !== "git") {
-      return;
-    }
-
     const finalDir = getTemplateCacheDir(id);
     const tempDir = `${finalDir}.tmp.${Date.now()}`;
+    const sourceCandidates = buildTemplateGitSourceCandidates(template.source);
 
     await fs.remove(tempDir);
     try {
-      await cloneGitTemplate(template.source, template.branch, tempDir);
+      const usedSource = await cloneGitTemplate(sourceCandidates, template.branch, tempDir);
       if (template.subPath) {
         const subDir = path.join(tempDir, template.subPath);
         if (!(await fs.pathExists(subDir))) {
@@ -197,6 +178,20 @@ export class TemplateService {
       }
       await fs.remove(finalDir);
       await fs.move(tempDir, finalDir);
+
+      if (usedSource !== template.source) {
+        await writeDb((draft) => {
+          const index = draft.templates.findIndex((item) => item.id === id);
+          if (index === -1) {
+            return;
+          }
+          draft.templates[index] = {
+            ...draft.templates[index],
+            source: usedSource,
+            updatedAt: new Date().toISOString()
+          };
+        });
+      }
     } catch (error) {
       await fs.remove(tempDir);
       throw error;
@@ -205,15 +200,11 @@ export class TemplateService {
 
   async resolveTemplateDir(id: string): Promise<string> {
     const template = await this.getTemplateById(id);
-    let baseDir: string;
-    if (template.sourceType === "local") {
-      baseDir = normalizePath(template.source);
-    } else {
-      baseDir = getTemplateCacheDir(template.id);
-      if (!(await fs.pathExists(baseDir))) {
-        await this.syncTemplate(template.id);
-      }
+    const baseDir = getTemplateCacheDir(template.id);
+    if (!(await fs.pathExists(baseDir))) {
+      await this.syncTemplate(template.id);
     }
+
     const resolvedDir = template.subPath ? path.join(baseDir, template.subPath) : baseDir;
     const exists = await fs.pathExists(resolvedDir);
     if (!exists) {

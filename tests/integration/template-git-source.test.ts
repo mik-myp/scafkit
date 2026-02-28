@@ -1,4 +1,4 @@
-import path from "node:path";
+﻿import path from "node:path";
 import os from "node:os";
 import fs from "fs-extra";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -32,21 +32,19 @@ describe("template service git source", () => {
     const service = new NoSyncTemplateService();
     const result = await service.addTemplate({
       name: "gh-https-template",
-      sourceType: "git",
       source: "https://github.com/openai/scafkit"
     });
 
     expect(result.source).toBe("https://github.com/openai/scafkit.git");
   });
 
-  it("normalizes gitlab ssh source on add", async () => {
+  it("normalizes gitee host-only source on add", async () => {
     const service = new NoSyncTemplateService();
     const result = await service.addTemplate({
-      name: "gl-ssh-template",
-      sourceType: "git",
-      source: "git@gitlab.com:group/subgroup/template"
+      name: "gitee-host-template",
+      source: "gitee.com/group/template"
     });
 
-    expect(result.source).toBe("git@gitlab.com:group/subgroup/template.git");
+    expect(result.source).toBe("https://gitee.com/group/template.git");
   });
 });

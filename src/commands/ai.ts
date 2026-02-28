@@ -1,4 +1,4 @@
-import { Command } from "commander";
+﻿import { Command } from "commander";
 import { password } from "@inquirer/prompts";
 import ora from "ora";
 import { AiService } from "../core/ai-service.js";
@@ -6,6 +6,7 @@ import { asErrorMessage } from "../utils/errors.js";
 import { logInfo, logSuccess, logWarn } from "../utils/logger.js";
 
 interface AiSetOptions {
+  name?: string;
   baseUrl?: string;
   apiKey?: string;
   model?: string;
@@ -17,7 +18,8 @@ export function registerAiCommands(program: Command): void {
   const ai = program.command("ai").description("AI 配置管理");
 
   ai.command("set")
-    .description("设置 AI 配置")
+    .description("新增或更新 AI 配置，并切换为当前配置")
+    .option("--name <name>", "配置名称（默认 default）")
     .option("--base-url <url>", "API Base URL")
     .option("--api-key <key>", "API Key")
     .option("--model <model>", "模型名称")
@@ -25,16 +27,47 @@ export function registerAiCommands(program: Command): void {
     .action(async (options: AiSetOptions) => {
       const apiKey = options.apiKey || (await password({ message: "请输入 API Key" }));
       const config = await aiService.setConfig({
+        profileName: options.name,
         baseURL: options.baseUrl || undefined,
         apiKey,
         model: options.model || undefined,
-        timeoutMs: options.timeout ? Number(options.timeout) : undefined
+        timeoutMs: options.timeout ? Number(options.timeout) : undefined,
+        activate: true
       });
-      logSuccess(`AI 配置已更新: ${config.baseURL} / ${config.model}`);
+      logSuccess(`AI 配置已更新并激活: ${config.name} (${config.baseURL} / ${config.model})`);
+    });
+
+  ai.command("list")
+    .description("查看 AI 配置列表")
+    .action(async () => {
+      const profiles = await aiService.getProfiles();
+      const active = await aiService.getActiveProfile();
+      if (profiles.length === 0) {
+        logInfo("AI 配置尚未设置");
+        return;
+      }
+      console.table(
+        profiles.map((item) => ({
+          active: active?.id === item.id ? "*" : "",
+          id: item.id,
+          name: item.name,
+          baseURL: item.baseURL,
+          model: item.model,
+          timeoutMs: item.timeoutMs,
+          updatedAt: item.updatedAt
+        }))
+      );
+    });
+
+  ai.command("use <idOrName>")
+    .description("切换当前使用的 AI 配置")
+    .action(async (idOrName: string) => {
+      const profile = await aiService.useConfig(idOrName);
+      logSuccess(`已切换 AI 配置: ${profile.name} (${profile.id})`);
     });
 
   ai.command("show")
-    .description("查看 AI 配置（脱敏）")
+    .description("查看当前 AI 配置（脱敏）")
     .action(async () => {
       const config = await aiService.getMaskedConfig();
       if (!config) {

@@ -12,7 +12,7 @@ async function main(): Promise<void> {
   const program = new Command();
   program
     .name("scafkit")
-    .description("本地模板脚手架与 AI Git 助手")
+    .description("远程模板脚手架与 AI Git 助手")
     .version("0.1.0");
 
   registerTemplateCommands(program);

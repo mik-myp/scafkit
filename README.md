@@ -1,11 +1,11 @@
-# scafkit
+﻿# scafkit
 
 本地优先的脚手架 CLI，支持模板管理、项目初始化、AI 代码审查与自动生成中文提交信息。
 
 ## 1. 你可以用 scafkit 做什么
 
 - 使用本地 JSON 文件当数据库，不依赖远端服务。
-- 管理模板（本地目录 / Git 仓库）：新增、查看、更新、删除、同步。
+- 管理模板（远程 Git 仓库）：新增、查看、更新、删除、同步。
 - 从模板快速初始化新项目，支持变量渲染。
 - 让 AI 审查 `git staged diff`，输出风险项和测试建议。
 - 生成中文 Conventional Commit 提交信息，并在确认后自动执行 `git commit` / `git push`。
@@ -45,19 +45,13 @@ scafkit --help
 scafkit ai set --api-key sk-xxxx --base-url https://api.openai.com/v1 --model gpt-4o-mini --timeout 30000
 ```
 
-### 4.2 添加模板（本地模板示例）
+### 4.2 添加远程模板
 
 ```bash
-scafkit template add --name node-lib --source-type local --source /absolute/path/to/template
-```
-
-### 4.2.1 添加模板（GitHub/GitLab，HTTPS/SSH）
-
-```bash
-scafkit template add --name gh-https --source-type git --source https://github.com/org/template-repo
-scafkit template add --name gh-ssh --source-type git --source git@github.com:org/template-repo.git
-scafkit template add --name gl-https --source-type git --source https://gitlab.com/group/template-repo
-scafkit template add --name gl-ssh --source-type git --source git@gitlab.com:group/template-repo.git
+scafkit template add --name node-lib --source github.com/org/template-repo
+scafkit template add --name node-lib --source git@gitlab.com:group/template-repo
+scafkit template add --name node-lib --source gitee.com/group/template-repo
+scafkit template add --name node-lib --source group/template-repo
 ```
 
 ### 4.3 查看模板 ID
@@ -103,13 +97,12 @@ export SCAFKIT_HOME=/tmp/my-scafkit-home
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "templates": [
     {
       "id": "tpl_xxxxx",
       "name": "node-lib",
-      "sourceType": "local",
-      "source": "/absolute/path/to/template",
+      "source": "https://github.com/org/template-repo.git",
       "branch": "main",
       "subPath": "templates/base",
       "variables": [
@@ -121,10 +114,19 @@ export SCAFKIT_HOME=/tmp/my-scafkit-home
     }
   ],
   "ai": {
-    "baseURL": "https://api.openai.com/v1",
-    "apiKey": "sk-xxxx",
-    "model": "gpt-4o-mini",
-    "timeoutMs": 30000
+    "activeProfileId": "ai_xxxxx",
+    "profiles": [
+      {
+        "id": "ai_xxxxx",
+        "name": "default",
+        "baseURL": "https://api.openai.com/v1",
+        "apiKey": "sk-xxxx",
+        "model": "gpt-4o-mini",
+        "timeoutMs": 30000,
+        "createdAt": "2026-02-28T00:00:00.000Z",
+        "updatedAt": "2026-02-28T00:00:00.000Z"
+      }
+    ]
   }
 }
 ```
@@ -133,8 +135,7 @@ export SCAFKIT_HOME=/tmp/my-scafkit-home
 
 ### 6.1 支持来源
 
-- `local`：本地目录
-- `git`：远程 Git 仓库（会拉取到 `~/.scafkit/templates/<templateId>`），支持 GitHub/GitLab 的 HTTPS 与 SSH 地址
+- `git`：远程 Git 仓库（会拉取到 `~/.scafkit/templates/<templateId>`），支持 GitHub/GitLab/Gitee，不区分 HTTPS/SSH 输入形式
 
 ### 6.2 变量定义
 
@@ -166,15 +167,15 @@ export SCAFKIT_HOME=/tmp/my-scafkit-home
 ### 新增模板
 
 ```bash
-scafkit template add [--id <id>] [--name <name>] [--description <desc>] [--source-type local|git] [--source <path|git-url>] [--branch <branch>] [--sub-path <subPath>] [--variables '<json-array>']
+scafkit template add [--id <id>] [--name <name>] [--description <desc>] [--source <git-url|host/repo|group/repo>] [--branch <branch>] [--sub-path <subPath>] [--variables '<json-array>']
 ```
 
 示例（Git 模板）：
 
 ```bash
-scafkit template add --name react-admin --source-type git --source https://github.com/org/template-repo.git --branch main --sub-path templates/admin
-scafkit template add --name react-admin-ssh --source-type git --source git@github.com:org/template-repo.git --branch main --sub-path templates/admin
-scafkit template add --name internal-admin --source-type git --source git@gitlab.com:group/subgroup/template-repo.git --branch main --sub-path templates/admin
+scafkit template add --name react-admin --source github.com/org/template-repo --branch main --sub-path templates/admin
+scafkit template add --name react-admin --source git@gitlab.com:group/subgroup/template-repo --branch main --sub-path templates/admin
+scafkit template add --name react-admin --source gitee.com/group/template-repo --branch main --sub-path templates/admin
 ```
 
 ### 列表 / 详情 / 更新 / 删除 / 同步
@@ -182,7 +183,7 @@ scafkit template add --name internal-admin --source-type git --source git@gitlab
 ```bash
 scafkit template list
 scafkit template show <id>
-scafkit template update <id> [--name <name>] [--source <path|git-url>] [--branch <branch>] [--sub-path <subPath>] [--variables '<json-array>']
+scafkit template update <id> [--name <name>] [--source <git-url|host/repo|group/repo>] [--branch <branch>] [--sub-path <subPath>] [--variables '<json-array>']
 scafkit template remove <id> [-y]
 scafkit template sync <id>
 ```
@@ -191,25 +192,37 @@ scafkit template sync <id>
 
 ```bash
 scafkit init <projectName> -t <templateId> [--dest <path>] [-f] [--var key=value ...]
+scafkit init-interactive [--dest <path>] [-f] [--var key=value ...]
 ```
 
 示例：
 
 ```bash
 scafkit init awesome-app -t tpl_xxxxx --dest ./workspace --var owner=kirito --var license=MIT
+scafkit init-interactive
 ```
+
+说明：
+
+- `init-interactive` 会先展示已配置模板列表，可通过上下方向键选择模板并回车确认。
+- 选择模板后会继续提示输入项目名称、目标目录、是否强制覆盖等配置。
 
 ### 7.3 `ai` AI 配置
 
 ```bash
-scafkit ai set [--api-key <key>] [--base-url <url>] [--model <model>] [--timeout <ms>]
+scafkit ai set [--name <profile>] [--api-key <key>] [--base-url <url>] [--model <model>] [--timeout <ms>]
+scafkit ai list
+scafkit ai use <id|name>
 scafkit ai show
 scafkit ai test
 ```
 
 说明：
 
-- `ai show` 会脱敏显示 `apiKey`。
+- `ai set` 会新增或更新指定 profile，并自动切换为当前 profile。
+- `ai list` 查看所有 profile，`active=*` 表示当前生效配置。
+- `ai use` 可在 profile 间切换。
+- `ai show` 会脱敏显示当前 profile 的 `apiKey`。
 - 未传 `--api-key` 时会进入安全输入模式。
 
 ### 7.4 `git` AI Git 助手
@@ -250,7 +263,7 @@ scafkit hook run-commit-msg <messageFile>
 
 ```bash
 # 1) 先准备一次模板
-scafkit template add --name web-ts --source-type local --source /path/to/template
+scafkit template add --name web-ts --source github.com/org/template-repo
 
 # 2) 基于模板初始化项目
 scafkit init demo-web --template tpl_xxxxx --var owner=kirito
@@ -277,7 +290,7 @@ scafkit init another-project --template <templateId>
 
 说明：
 
-- 使用 GitHub/GitLab 的 HTTPS 或 SSH 模板时，`sync` 后与本地模板一样可直接 `init` 生成项目。
+- 使用 GitHub/GitLab/Gitee 的远程模板时，`sync` 后可直接 `init` 生成项目。
 
 ## 9. 常见问题与排查
 
@@ -319,4 +332,5 @@ pnpm dev -- --help
 - 贡献规范：`CONTRIBUTING.md`
 - PR 模板：`.github/pull_request_template.md`
 - Issue 模板：`.github/ISSUE_TEMPLATE/`
+
 

@@ -1,27 +1,18 @@
-import { Command } from "commander";
-import { confirm, input, select } from "@inquirer/prompts";
+﻿import { Command } from "commander";
+import { confirm, input } from "@inquirer/prompts";
 import { TemplateService } from "../core/template-service.js";
 import { logInfo, logSuccess } from "../utils/logger.js";
 import { parseJsonArrayOption } from "../utils/cli.js";
-import type { TemplateSourceType, TemplateVariable } from "../types.js";
-import { CliError } from "../utils/errors.js";
+import type { TemplateVariable } from "../types.js";
 
 interface TemplateOptions {
   id?: string;
   name?: string;
   description?: string;
-  sourceType?: TemplateSourceType;
   source?: string;
   branch?: string;
   subPath?: string;
   variables?: string;
-}
-
-function normalizeSourceType(inputType: string): TemplateSourceType {
-  if (inputType === "local" || inputType === "git") {
-    return inputType;
-  }
-  throw new CliError(`无效 source-type: ${inputType}，可选 local|git`);
 }
 
 export function registerTemplateCommands(program: Command): void {
@@ -30,34 +21,24 @@ export function registerTemplateCommands(program: Command): void {
 
   template
     .command("add")
-    .description("新增模板")
+    .description("新增远程模板")
     .option("--id <id>", "模板 ID")
     .option("--name <name>", "模板名称")
     .option("--description <description>", "模板描述")
-    .option("--source-type <sourceType>", "模板来源类型 local|git")
-    .option("--source <source>", "本地路径或 git url")
+    .option("--source <source>", "远程仓库地址（支持 GitHub/GitLab/Gitee）")
     .option("--branch <branch>", "git 分支")
     .option("--sub-path <subPath>", "模板子目录")
     .option("--variables <json>", "变量定义 JSON 数组")
     .action(async (options: TemplateOptions) => {
-      const sourceTypeRaw =
-        options.sourceType ||
-        (await select({
-          message: "选择模板来源",
-          choices: [
-            { name: "local", value: "local" },
-            { name: "git", value: "git" }
-          ]
-        }));
-      const sourceType = normalizeSourceType(sourceTypeRaw);
       const name = options.name || (await input({ message: "模板名称" }));
-      const source = options.source || (await input({ message: "模板路径或 Git URL" }));
+      const source =
+        options.source ||
+        (await input({ message: "远程仓库地址（示例: github.com/org/repo 或 git@gitlab.com:group/repo）" }));
       const variables = parseJsonArrayOption<TemplateVariable>(options.variables, "variables");
       const result = await service.addTemplate({
         id: options.id,
         name,
         description: options.description,
-        sourceType,
         source,
         branch: options.branch,
         subPath: options.subPath,
@@ -79,7 +60,6 @@ export function registerTemplateCommands(program: Command): void {
         list.map((item) => ({
           id: item.id,
           name: item.name,
-          sourceType: item.sourceType,
           source: item.source,
           updatedAt: item.updatedAt
         }))
@@ -99,7 +79,7 @@ export function registerTemplateCommands(program: Command): void {
     .description("更新模板")
     .option("--name <name>", "模板名称")
     .option("--description <description>", "模板描述")
-    .option("--source <source>", "本地路径或 git url")
+    .option("--source <source>", "远程仓库地址")
     .option("--branch <branch>", "git 分支")
     .option("--sub-path <subPath>", "模板子目录")
     .option("--variables <json>", "变量定义 JSON 数组")
@@ -134,7 +114,7 @@ export function registerTemplateCommands(program: Command): void {
 
   template
     .command("sync <id>")
-    .description("同步 git 模板到本地缓存")
+    .description("同步模板到本地缓存")
     .action(async (id: string) => {
       await service.syncTemplate(id);
       logSuccess(`模板同步完成: ${id}`);
