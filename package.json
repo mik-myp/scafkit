@@ -1,0 +1,75 @@
+{
+  "name": "scafkit",
+  "version": "0.1.0",
+  "description": "A local-first scaffolding CLI with template management and AI-powered Git commit assistance.",
+  "type": "module",
+  "preferGlobal": true,
+  "bin": {
+    "scafkit": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "RELEASE.md",
+    "CONTRIBUTING.md"
+  ],
+  "license": "MIT",
+  "author": "kirito",
+  "keywords": [
+    "cli",
+    "scaffold",
+    "template",
+    "git",
+    "ai",
+    "commit-message"
+  ],
+  "homepage": "https://www.npmjs.com/package/scafkit",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --check .",
+    "prepublishOnly": "pnpm run lint && pnpm run test && pnpm run build",
+    "release:check": "pnpm run prepublishOnly && npm pack --dry-run",
+    "release:patch": "npm version patch && npm publish",
+    "release:minor": "npm version minor && npm publish",
+    "release:major": "npm version major && npm publish"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.2.1",
+    "chalk": "^5.4.1",
+    "commander": "^14.0.1",
+    "ejs": "^3.1.10",
+    "execa": "^9.6.0",
+    "fs-extra": "^11.3.0",
+    "lowdb": "^7.0.1",
+    "openai": "^6.3.0",
+    "ora": "^8.2.0",
+    "simple-git": "^3.30.0",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@types/ejs": "^3.1.5",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^24.5.0",
+    "@typescript-eslint/eslint-plugin": "^8.44.1",
+    "@typescript-eslint/parser": "^8.44.1",
+    "eslint": "^9.36.0",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "packageManager": "pnpm@10.29.2"
+}
