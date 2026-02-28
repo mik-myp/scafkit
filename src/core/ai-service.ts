@@ -6,6 +6,7 @@ import { CliError } from "../utils/errors.js";
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_MODEL = "gpt-4o-mini";
 const DEFAULT_TIMEOUT = 30_000;
+const REVIEW_DIFF_MAX_CHARS = 20_000;
 const ALLOWED_COMMIT_TYPES = new Set([
   "feat",
   "fix",
@@ -27,7 +28,7 @@ export interface SetAiConfigInput {
   timeoutMs?: number;
 }
 
-function fallbackReviewResult(diff: string): ReviewResult {
+export function createFallbackReviewResult(diff: string): ReviewResult {
   const fileCount = diff
     .split("\n")
     .filter((line) => line.startsWith("diff --git"))
@@ -63,6 +64,7 @@ export function formatConventionalCommit(suggestion: CommitSuggestion): string {
 }
 
 export function parseReviewResponse(rawText: string, diff: string): ReviewResult {
+  const fallback = createFallbackReviewResult(diff);
   try {
     const parsed = JSON.parse(rawText) as Partial<ReviewResult>;
     const summary = parsed.summary?.trim();
@@ -73,33 +75,46 @@ export function parseReviewResponse(rawText: string, diff: string): ReviewResult
       ? parsed.testSuggestions.map((item) => String(item).trim()).filter(Boolean)
       : [];
     return {
-      summary: summary || fallbackReviewResult(diff).summary,
-      riskItems: riskItems.length > 0 ? riskItems : fallbackReviewResult(diff).riskItems,
+      summary: summary || fallback.summary,
+      riskItems: riskItems.length > 0 ? riskItems : fallback.riskItems,
       testSuggestions:
-        testSuggestions.length > 0 ? testSuggestions : fallbackReviewResult(diff).testSuggestions,
+        testSuggestions.length > 0 ? testSuggestions : fallback.testSuggestions,
       commitSuggestion: normalizeCommitSuggestion(parsed.commitSuggestion)
     };
   } catch {
-    return fallbackReviewResult(diff);
+    return fallback;
   }
 }
 
 function buildSystemPrompt(): string {
   return [
-    "你是资深代码审查助手，请针对 git staged diff 进行审查，并输出 JSON。",
-    "输出必须是 JSON 对象，字段如下：",
-    "summary: 字符串，中文，总结变更与潜在风险。",
-    "riskItems: 字符串数组，中文，列出潜在问题或注意事项。",
-    "testSuggestions: 字符串数组，中文，列出建议验证项。",
+    "你是资深代码审查助手，请基于 git staged diff 给出可执行的审查结论。",
+    "只允许输出合法 JSON 对象，不要输出 markdown、解释文本或代码块。",
+    "JSON 字段与约束：",
+    "summary: 中文字符串，1-2 句，先讲核心变更，再讲主要风险。",
+    "riskItems: 中文字符串数组，按风险优先级排序，最多 5 条；无明显风险时返回空数组。",
+    "testSuggestions: 中文字符串数组，给出可落地验证建议，最多 5 条。",
     "commitSuggestion: 对象，包含 type/scope/subject/body。",
-    "type 必须是 Conventional Commits: feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert。",
-    "subject 必须中文，简短明确。",
-    "严格返回 JSON，不要使用 markdown。"
+    "type 只能是 feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert。",
+    "scope 可选，尽量使用受影响模块名（如 cli/template/git/hook）。",
+    "subject 必须是中文，20 字以内，使用动宾结构，不要句号。",
+    "body 可选；如需填写，用 1-3 行中文说明变更动机或影响。",
+    "禁止编造不存在的改动，信息不足时明确标注“需人工复核”。"
   ].join("\n");
 }
 
 function buildUserPrompt(diff: string): string {
-  return `请审查以下 staged diff，并生成提交建议：\n\n${diff}`;
+  const normalized = diff.trim();
+  const truncated =
+    normalized.length > REVIEW_DIFF_MAX_CHARS
+      ? `${normalized.slice(0, REVIEW_DIFF_MAX_CHARS)}\n\n[... diff 已截断，请优先识别高风险问题 ...]`
+      : normalized;
+  return [
+    "请审查以下 staged diff，并给出风险、测试建议与提交信息。",
+    "重点关注：兼容性、边界条件、异常处理、回滚影响、测试覆盖。",
+    "",
+    truncated
+  ].join("\n");
 }
 
 export class AiService {

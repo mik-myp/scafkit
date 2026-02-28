@@ -6,6 +6,7 @@ import { readDb, writeDb } from "../db/store.js";
 import type { TemplateRecord, TemplateSourceType, TemplateVariable } from "../types.js";
 import { CliError } from "../utils/errors.js";
 import { getScafkitPaths, normalizePath } from "../utils/path.js";
+import { normalizeTemplateGitSource } from "../utils/git-source.js";
 
 export interface AddTemplateInput {
   id?: string;
@@ -72,6 +73,8 @@ export class TemplateService {
     if (input.sourceType === "local") {
       await ensureLocalTemplateExists(input.source);
     }
+    const normalizedSource =
+      input.sourceType === "local" ? normalizePath(input.source) : normalizeTemplateGitSource(input.source);
 
     const now = new Date().toISOString();
     const record: TemplateRecord = {
@@ -79,7 +82,7 @@ export class TemplateService {
       name: input.name,
       description: input.description,
       sourceType: input.sourceType,
-      source: input.sourceType === "local" ? normalizePath(input.source) : input.source,
+      source: normalizedSource,
       branch: input.branch,
       subPath: input.subPath,
       variables: input.variables,
@@ -124,6 +127,10 @@ export class TemplateService {
     if (current.sourceType === "local" && input.source) {
       await ensureLocalTemplateExists(updatedSource);
     }
+    const normalizedSource =
+      current.sourceType === "local"
+        ? normalizePath(updatedSource)
+        : normalizeTemplateGitSource(updatedSource);
 
     const db = await writeDb((draft) => {
       const index = draft.templates.findIndex((item) => item.id === id);
@@ -140,10 +147,7 @@ export class TemplateService {
         ...draft.templates[index],
         name: input.name ?? draft.templates[index].name,
         description: input.description ?? draft.templates[index].description,
-        source:
-          draft.templates[index].sourceType === "local"
-            ? normalizePath(updatedSource)
-            : updatedSource,
+        source: normalizedSource,
         branch: input.branch ?? draft.templates[index].branch,
         subPath: input.subPath ?? draft.templates[index].subPath,
         variables: input.variables ?? draft.templates[index].variables,

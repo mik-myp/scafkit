@@ -8,7 +8,7 @@
 - 管理模板（本地目录 / Git 仓库）：新增、查看、更新、删除、同步。
 - 从模板快速初始化新项目，支持变量渲染。
 - 让 AI 审查 `git staged diff`，输出风险项和测试建议。
-- 生成中文 Conventional Commit 提交信息。
+- 生成中文 Conventional Commit 提交信息，并在确认后自动执行 `git commit` / `git push`。
 - 安装 `commit-msg` hook，让提交时自动写入提交信息。
 - AI 失败时默认不阻塞提交流程。
 
@@ -16,7 +16,7 @@
 
 - Node.js `>= 20`
 - pnpm `>= 10`（开发模式推荐）
-- Git（使用 `git review` / `hook` 时必须）
+- Git（使用 `git review` / `git commit-message` / `hook` 时必须）
 
 ## 3. 安装方式
 
@@ -42,20 +42,22 @@ scafkit --help
 ### 4.1 配置 AI
 
 ```bash
-scafkit ai set \
-  --api-key sk-xxxx \
-  --base-url https://api.openai.com/v1 \
-  --model gpt-4o-mini \
-  --timeout 30000
+scafkit ai set --api-key sk-xxxx --base-url https://api.openai.com/v1 --model gpt-4o-mini --timeout 30000
 ```
 
 ### 4.2 添加模板（本地模板示例）
 
 ```bash
-scafkit template add \
-  --name node-lib \
-  --source-type local \
-  --source /absolute/path/to/template
+scafkit template add --name node-lib --source-type local --source /absolute/path/to/template
+```
+
+### 4.2.1 添加模板（GitHub/GitLab，HTTPS/SSH）
+
+```bash
+scafkit template add --name gh-https --source-type git --source https://github.com/org/template-repo
+scafkit template add --name gh-ssh --source-type git --source git@github.com:org/template-repo.git
+scafkit template add --name gl-https --source-type git --source https://gitlab.com/group/template-repo
+scafkit template add --name gl-ssh --source-type git --source git@gitlab.com:group/template-repo.git
 ```
 
 ### 4.3 查看模板 ID
@@ -70,7 +72,7 @@ scafkit template list
 scafkit init my-project --template tpl_xxxxx --var owner=kirito
 ```
 
-### 4.5 审查暂存区代码并生成提交信息
+### 4.5 审查暂存区代码并生成提交信息（可自动提交推送）
 
 ```bash
 git add .
@@ -132,7 +134,7 @@ export SCAFKIT_HOME=/tmp/my-scafkit-home
 ### 6.1 支持来源
 
 - `local`：本地目录
-- `git`：远程 Git 仓库（会拉取到 `~/.scafkit/templates/<templateId>`）
+- `git`：远程 Git 仓库（会拉取到 `~/.scafkit/templates/<templateId>`），支持 GitHub/GitLab 的 HTTPS 与 SSH 地址
 
 ### 6.2 变量定义
 
@@ -164,20 +166,15 @@ export SCAFKIT_HOME=/tmp/my-scafkit-home
 ### 新增模板
 
 ```bash
-scafkit template add [--id <id>] [--name <name>] [--description <desc>] \
-  [--source-type local|git] [--source <path|git-url>] \
-  [--branch <branch>] [--sub-path <subPath>] [--variables '<json-array>']
+scafkit template add [--id <id>] [--name <name>] [--description <desc>] [--source-type local|git] [--source <path|git-url>] [--branch <branch>] [--sub-path <subPath>] [--variables '<json-array>']
 ```
 
 示例（Git 模板）：
 
 ```bash
-scafkit template add \
-  --name react-admin \
-  --source-type git \
-  --source https://github.com/org/template-repo.git \
-  --branch main \
-  --sub-path templates/admin
+scafkit template add --name react-admin --source-type git --source https://github.com/org/template-repo.git --branch main --sub-path templates/admin
+scafkit template add --name react-admin-ssh --source-type git --source git@github.com:org/template-repo.git --branch main --sub-path templates/admin
+scafkit template add --name internal-admin --source-type git --source git@gitlab.com:group/subgroup/template-repo.git --branch main --sub-path templates/admin
 ```
 
 ### 列表 / 详情 / 更新 / 删除 / 同步
@@ -225,6 +222,8 @@ scafkit git commit-message
 说明：
 
 - 两个命令都基于 `staged diff`（即 `git add` 后的内容）。
+- `git commit-message` 会先展示 AI 生成内容，再二次确认是否直接提交推送。
+- 若不使用 AI 生成内容，会提示手动输入提交信息，然后执行 `git commit` / `git push`。
 - 无暂存变更时会提示并退出。
 
 ### 7.5 `hook` 提交钩子
@@ -262,11 +261,11 @@ git add .
 # 4) 先看审查建议
 scafkit git review
 
-# 5) 安装一次 hook（仓库级）
-scafkit hook install
+# 5) 生成提交信息并按交互执行 commit/push
+scafkit git commit-message
 
-# 6) 正常提交，hook 会尝试自动写入提交信息
-git commit
+# 6) （可选）如果偏好原生 git commit，可安装一次 hook（仓库级）
+scafkit hook install
 ```
 
 ### 8.2 Git 模板更新流程
@@ -275,6 +274,10 @@ git commit
 scafkit template sync <templateId>
 scafkit init another-project --template <templateId>
 ```
+
+说明：
+
+- 使用 GitHub/GitLab 的 HTTPS 或 SSH 模板时，`sync` 后与本地模板一样可直接 `init` 生成项目。
 
 ## 9. 常见问题与排查
 

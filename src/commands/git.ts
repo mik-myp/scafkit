@@ -1,11 +1,24 @@
 import { Command } from "commander";
 import ora from "ora";
-import { AiService, formatConventionalCommit } from "../core/ai-service.js";
+import { confirm, input } from "@inquirer/prompts";
+import {
+  AiService,
+  createFallbackReviewResult,
+  formatConventionalCommit
+} from "../core/ai-service.js";
 import { GitService } from "../core/git-service.js";
-import { logInfo, logSuccess } from "../utils/logger.js";
+import { asErrorMessage } from "../utils/errors.js";
+import { logInfo, logSuccess, logWarn } from "../utils/logger.js";
 
 interface GitReviewOptions {
   staged?: boolean;
+}
+
+async function promptManualCommitMessage(): Promise<string> {
+  return input({
+    message: "请输入提交信息",
+    validate: (value) => (value.trim() ? true : "提交信息不能为空")
+  });
 }
 
 export function registerGitCommands(program: Command): void {
@@ -21,18 +34,27 @@ export function registerGitCommands(program: Command): void {
       const spinner = ora("正在分析 staged diff...").start();
       let diff = "";
       let result: Awaited<ReturnType<AiService["reviewDiff"]>> | null = null;
+      let degradedReason = "";
       try {
         diff = await gitService.getStagedDiff();
         if (!diff.trim()) {
           return;
         }
-        result = await aiService.reviewDiff(diff);
+        try {
+          result = await aiService.reviewDiff(diff);
+        } catch (error) {
+          degradedReason = asErrorMessage(error);
+          result = createFallbackReviewResult(diff);
+        }
       } finally {
         spinner.stop();
       }
       if (!diff.trim() || !result) {
         logInfo("没有可审查的 staged 变更");
         return;
+      }
+      if (degradedReason) {
+        logWarn(`AI 审查失败，已降级为本地建议：${degradedReason}`);
       }
       logSuccess("AI 审查完成");
       console.log(`\n总结:\n${result.summary}\n`);
@@ -56,26 +78,66 @@ export function registerGitCommands(program: Command): void {
 
   git
     .command("commit-message")
-    .description("生成中文 Conventional Commit 提交信息")
+    .description("生成中文 Conventional Commit 提交信息，并自动 commit/push")
     .option("--staged", "分析 staged 变更", true)
     .action(async (_options: GitReviewOptions) => {
       const spinner = ora("正在生成提交信息...").start();
       let diff = "";
       let message = "";
+      let degradedReason = "";
       try {
         diff = await gitService.getStagedDiff();
         if (!diff.trim()) {
           return;
         }
-        message = await aiService.generateCommitMessage(diff);
+        try {
+          message = await aiService.generateCommitMessage(diff);
+        } catch (error) {
+          degradedReason = asErrorMessage(error);
+        }
       } finally {
         spinner.stop();
       }
       if (!diff.trim()) {
-        logInfo("没有可分析的 staged 变更");
+        logInfo("没有已暂存的文件，请先执行 git add 后重试");
         return;
       }
-      logSuccess("生成完成");
-      console.log(message);
+      let finalMessage = "";
+      if (degradedReason || !message.trim()) {
+        logWarn(
+          `AI 生成提交信息失败，已切换为手动输入模式：${degradedReason || "未生成有效提交信息"}`
+        );
+        finalMessage = await promptManualCommitMessage();
+      } else {
+        logSuccess("提交信息生成完成");
+        console.log(`\n生成的提交信息:\n${message}\n`);
+
+        const useGenerated = await confirm({
+          message: "是否使用该提交信息执行 git commit 并推送？",
+          default: true
+        });
+
+        finalMessage = useGenerated ? message : await promptManualCommitMessage();
+      }
+
+      const commitSpinner = ora("正在执行 git commit...").start();
+      try {
+        await gitService.commitStaged(finalMessage);
+        commitSpinner.succeed("git commit 完成");
+      } catch (error) {
+        commitSpinner.fail("git commit 失败");
+        throw error;
+      }
+
+      const pushSpinner = ora("正在执行 git push...").start();
+      try {
+        await gitService.pushCurrentBranch();
+        pushSpinner.succeed("git push 完成");
+      } catch (error) {
+        pushSpinner.fail("git push 失败");
+        throw error;
+      }
+
+      logSuccess("代码已完成提交并推送");
     });
 }

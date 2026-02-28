@@ -2,7 +2,8 @@ import { Command } from "commander";
 import { password } from "@inquirer/prompts";
 import ora from "ora";
 import { AiService } from "../core/ai-service.js";
-import { logInfo, logSuccess } from "../utils/logger.js";
+import { asErrorMessage } from "../utils/errors.js";
+import { logInfo, logSuccess, logWarn } from "../utils/logger.js";
 
 interface AiSetOptions {
   baseUrl?: string;
@@ -15,8 +16,7 @@ export function registerAiCommands(program: Command): void {
   const aiService = new AiService();
   const ai = program.command("ai").description("AI 配置管理");
 
-  ai
-    .command("set")
+  ai.command("set")
     .description("设置 AI 配置")
     .option("--base-url <url>", "API Base URL")
     .option("--api-key <key>", "API Key")
@@ -33,8 +33,7 @@ export function registerAiCommands(program: Command): void {
       logSuccess(`AI 配置已更新: ${config.baseURL} / ${config.model}`);
     });
 
-  ai
-    .command("show")
+  ai.command("show")
     .description("查看 AI 配置（脱敏）")
     .action(async () => {
       const config = await aiService.getMaskedConfig();
@@ -45,17 +44,19 @@ export function registerAiCommands(program: Command): void {
       console.log(JSON.stringify(config, null, 2));
     });
 
-  ai
-    .command("test")
+  ai.command("test")
     .description("测试 AI 连通性")
     .action(async () => {
       const spinner = ora("正在测试 AI 连通性...").start();
       let output = "";
       try {
         output = await aiService.testConnection();
+        logSuccess(`AI 连通性正常: ${output}`);
+      } catch (error) {
+        logWarn(`AI 连通性测试失败: ${asErrorMessage(error)}`);
+        logInfo("不会影响脚手架基础能力，可继续使用模板管理/初始化等命令。");
       } finally {
         spinner.stop();
       }
-      logSuccess(`AI 连通性正常: ${output}`);
     });
 }

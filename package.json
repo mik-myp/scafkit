@@ -4,6 +4,7 @@
   "description": "A local-first scaffolding CLI with template management and AI-powered Git commit assistance.",
   "type": "module",
   "preferGlobal": true,
+  "main": "dist/cli.js",
   "bin": {
     "scafkit": "dist/cli.js"
   },
@@ -25,7 +26,14 @@
     "ai",
     "commit-message"
   ],
-  "homepage": "https://www.npmjs.com/package/scafkit",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mik-myp/scafkit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mik-myp/scafkit/issues"
+  },
+  "homepage": "https://github.com/mik-myp/scafkit#readme",
   "publishConfig": {
     "access": "public"
   },
