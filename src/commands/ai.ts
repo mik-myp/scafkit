@@ -1,5 +1,5 @@
 ﻿import { Command } from "commander";
-import { password } from "@inquirer/prompts";
+import { confirm, password } from "@inquirer/prompts";
 import ora from "ora";
 import { AiService } from "../core/ai-service.js";
 import { asErrorMessage } from "../utils/errors.js";
@@ -11,6 +11,10 @@ interface AiSetOptions {
   apiKey?: string;
   model?: string;
   timeout?: string;
+}
+
+interface AiRemoveOptions {
+  yes?: boolean;
 }
 
 export function registerAiCommands(program: Command): void {
@@ -25,7 +29,8 @@ export function registerAiCommands(program: Command): void {
     .option("--model <model>", "模型名称")
     .option("--timeout <ms>", "超时时间（毫秒）")
     .action(async (options: AiSetOptions) => {
-      const apiKey = options.apiKey || (await password({ message: "请输入 API Key" }));
+      const apiKey =
+        options.apiKey || (await password({ message: "请输入 API Key" }));
       const config = await aiService.setConfig({
         profileName: options.name,
         baseURL: options.baseUrl || undefined,
@@ -34,7 +39,9 @@ export function registerAiCommands(program: Command): void {
         timeoutMs: options.timeout ? Number(options.timeout) : undefined,
         activate: true
       });
-      logSuccess(`AI 配置已更新并激活: ${config.name} (${config.baseURL} / ${config.model})`);
+      logSuccess(
+        `AI 配置已更新并激活: ${config.name} (${config.baseURL} / ${config.model})`
+      );
     });
 
   ai.command("list")
@@ -64,6 +71,35 @@ export function registerAiCommands(program: Command): void {
     .action(async (idOrName: string) => {
       const profile = await aiService.useConfig(idOrName);
       logSuccess(`已切换 AI 配置: ${profile.name} (${profile.id})`);
+    });
+
+  ai.command("remove <idOrName>")
+    .alias("delete")
+    .description("删除 AI 配置")
+    .option("-y, --yes", "跳过确认")
+    .action(async (idOrName: string, options: AiRemoveOptions) => {
+      if (!options.yes) {
+        const ok = await confirm({
+          message: `确认删除 AI 配置 ${idOrName} 吗？`,
+          default: false
+        });
+        if (!ok) {
+          logInfo("已取消删除");
+          return;
+        }
+      }
+
+      const result = await aiService.removeConfig(idOrName);
+      if (result.active) {
+        logSuccess(
+          `AI 配置已删除: ${result.removed.name} (${result.removed.id})，当前配置: ${result.active.name} (${result.active.id})`
+        );
+        return;
+      }
+
+      logSuccess(
+        `AI 配置已删除: ${result.removed.name} (${result.removed.id})，当前无可用配置`
+      );
     });
 
   ai.command("show")

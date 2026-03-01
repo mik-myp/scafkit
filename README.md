@@ -213,6 +213,8 @@ scafkit init-interactive
 scafkit ai set [--name <profile>] [--api-key <key>] [--base-url <url>] [--model <model>] [--timeout <ms>]
 scafkit ai list
 scafkit ai use <id|name>
+scafkit ai remove <id|name>
+scafkit ai delete <id|name>
 scafkit ai show
 scafkit ai test
 ```
@@ -222,6 +224,8 @@ scafkit ai test
 - `ai set` 会新增或更新指定 profile，并自动切换为当前 profile。
 - `ai list` 查看所有 profile，`active=*` 表示当前生效配置。
 - `ai use` 可在 profile 间切换。
+- `ai remove` / `ai delete` 删除指定 profile（默认会二次确认，可通过 `-y` 跳过）。
+- 若删除的是当前 profile，会自动切换到剩余列表中的第一个；若已无配置则 active 为空。
 - `ai show` 会脱敏显示当前 profile 的 `apiKey`。
 - 未传 `--api-key` 时会进入安全输入模式。
 
@@ -332,5 +336,3 @@ pnpm dev -- --help
 - 贡献规范：`CONTRIBUTING.md`
 - PR 模板：`.github/pull_request_template.md`
 - Issue 模板：`.github/ISSUE_TEMPLATE/`
-
-

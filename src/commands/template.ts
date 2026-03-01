@@ -33,8 +33,14 @@ export function registerTemplateCommands(program: Command): void {
       const name = options.name || (await input({ message: "模板名称" }));
       const source =
         options.source ||
-        (await input({ message: "远程仓库地址（示例: github.com/org/repo 或 git@gitlab.com:group/repo）" }));
-      const variables = parseJsonArrayOption<TemplateVariable>(options.variables, "variables");
+        (await input({
+          message:
+            "远程仓库地址（示例: github.com/org/repo 或 git@gitlab.com:group/repo）"
+        }));
+      const variables = parseJsonArrayOption<TemplateVariable>(
+        options.variables,
+        "variables"
+      );
       const result = await service.addTemplate({
         id: options.id,
         name,
@@ -84,7 +90,10 @@ export function registerTemplateCommands(program: Command): void {
     .option("--sub-path <subPath>", "模板子目录")
     .option("--variables <json>", "变量定义 JSON 数组")
     .action(async (id: string, options: TemplateOptions) => {
-      const variables = parseJsonArrayOption<TemplateVariable>(options.variables, "variables");
+      const variables = parseJsonArrayOption<TemplateVariable>(
+        options.variables,
+        "variables"
+      );
       const result = await service.updateTemplate(id, {
         name: options.name,
         description: options.description,
@@ -102,7 +111,10 @@ export function registerTemplateCommands(program: Command): void {
     .option("-y, --yes", "跳过确认")
     .action(async (id: string, options: { yes?: boolean }) => {
       if (!options.yes) {
-        const ok = await confirm({ message: `确认删除模板 ${id} 吗？`, default: false });
+        const ok = await confirm({
+          message: `确认删除模板 ${id} 吗？`,
+          default: false
+        });
         if (!ok) {
           logInfo("已取消删除");
           return;

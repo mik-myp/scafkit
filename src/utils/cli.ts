@@ -17,7 +17,10 @@ export function parseKeyValuePairs(values: string[]): Record<string, string> {
   return parsed;
 }
 
-export function parseJsonArrayOption<T>(input: string | undefined, fieldName: string): T[] | undefined {
+export function parseJsonArrayOption<T>(
+  input: string | undefined,
+  fieldName: string
+): T[] | undefined {
   if (!input) {
     return undefined;
   }

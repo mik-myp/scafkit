@@ -97,7 +97,9 @@ export class GitService {
     if (remotes.length === 0) {
       throw new CliError("git push 失败: 未配置远程仓库");
     }
-    const remoteName = remotes.some((item) => item.name === "origin") ? "origin" : remotes[0].name;
+    const remoteName = remotes.some((item) => item.name === "origin")
+      ? "origin"
+      : remotes[0].name;
 
     try {
       await this.git.raw(["push", "-u", remoteName, branch]);

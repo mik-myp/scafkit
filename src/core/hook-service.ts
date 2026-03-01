@@ -38,12 +38,16 @@ export class HookService {
   ) {}
 
   private async getHookFilePath(): Promise<string> {
-    const hooksDir = (await this.gitService.raw(["rev-parse", "--git-path", "hooks"])).trim();
+    const hooksDir = (
+      await this.gitService.raw(["rev-parse", "--git-path", "hooks"])
+    ).trim();
     if (!hooksDir) {
       throw new CliError("无法定位 git hooks 目录");
     }
     const repoRoot = await this.gitService.getRepoRoot();
-    const absoluteHooksDir = path.isAbsolute(hooksDir) ? hooksDir : path.join(repoRoot, hooksDir);
+    const absoluteHooksDir = path.isAbsolute(hooksDir)
+      ? hooksDir
+      : path.join(repoRoot, hooksDir);
     return path.join(absoluteHooksDir, HOOK_FILE_NAME);
   }
 
@@ -79,7 +83,9 @@ export class HookService {
       return;
     }
     if (!status.managedByScafkit) {
-      throw new CliError("commit-msg hook 存在，但不是 scafkit 生成，已拒绝删除");
+      throw new CliError(
+        "commit-msg hook 存在，但不是 scafkit 生成，已拒绝删除"
+      );
     }
     await fs.remove(status.path);
   }
@@ -87,12 +93,18 @@ export class HookService {
   async runCommitMsgHook(messageFile: string): Promise<HookRunResult> {
     const hasStaged = await this.gitService.hasStagedChanges();
     if (!hasStaged) {
-      return { updated: false, warning: "没有 staged 变更，跳过自动提交信息生成" };
+      return {
+        updated: false,
+        warning: "没有 staged 变更，跳过自动提交信息生成"
+      };
     }
 
     const diff = await this.gitService.getStagedDiff();
     if (!diff.trim()) {
-      return { updated: false, warning: "staged diff 为空，跳过自动提交信息生成" };
+      return {
+        updated: false,
+        warning: "staged diff 为空，跳过自动提交信息生成"
+      };
     }
 
     try {

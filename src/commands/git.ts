@@ -117,7 +117,9 @@ export function registerGitCommands(program: Command): void {
           default: true
         });
 
-        finalMessage = useGenerated ? message : await promptManualCommitMessage();
+        finalMessage = useGenerated
+          ? message
+          : await promptManualCommitMessage();
       }
 
       const commitSpinner = ora("正在执行 git commit...").start();

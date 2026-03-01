@@ -1,7 +1,12 @@
 ﻿import { randomUUID } from "node:crypto";
 import OpenAI from "openai";
 import { readDb, writeDb } from "../db/store.js";
-import type { AiConfig, AiProfile, CommitSuggestion, ReviewResult } from "../types.js";
+import type {
+  AiConfig,
+  AiProfile,
+  CommitSuggestion,
+  ReviewResult
+} from "../types.js";
 import { CliError } from "../utils/errors.js";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
@@ -32,6 +37,11 @@ export interface SetAiConfigInput {
   model?: string;
   timeoutMs?: number;
   activate?: boolean;
+}
+
+export interface RemoveAiConfigResult {
+  removed: AiProfile;
+  active: AiProfile | null;
 }
 
 function extractChangedFiles(diff: string): string[] {
@@ -82,7 +92,11 @@ function formatChangedFilesForPrompt(files: string[]): string {
   return lines.join("\n");
 }
 
-function truncateDiffForPrompt(diff: string, maxChars: number, cutHint: string): string {
+function truncateDiffForPrompt(
+  diff: string,
+  maxChars: number,
+  cutHint: string
+): string {
   const normalized = diff.trim();
   if (normalized.length <= maxChars) {
     return normalized;
@@ -146,10 +160,14 @@ function unwrapCommitHeaderPrefix(rawSubject: string): ParsedCommitHeader {
 
 function inferScopeFromFiles(files: string[]): string | undefined {
   const scores = new Map<string, number>();
-  const bump = (scope: string) => scores.set(scope, (scores.get(scope) ?? 0) + 1);
+  const bump = (scope: string) =>
+    scores.set(scope, (scores.get(scope) ?? 0) + 1);
 
   for (const file of files) {
-    if (file.startsWith("src/commands/git") || file.startsWith("src/core/git")) {
+    if (
+      file.startsWith("src/commands/git") ||
+      file.startsWith("src/core/git")
+    ) {
       bump("git");
       continue;
     }
@@ -157,15 +175,24 @@ function inferScopeFromFiles(files: string[]): string | undefined {
       bump("ai");
       continue;
     }
-    if (file.startsWith("src/commands/init") || file.startsWith("src/core/project-generator")) {
+    if (
+      file.startsWith("src/commands/init") ||
+      file.startsWith("src/core/project-generator")
+    ) {
       bump("init");
       continue;
     }
-    if (file.startsWith("src/commands/template") || file.startsWith("src/core/template")) {
+    if (
+      file.startsWith("src/commands/template") ||
+      file.startsWith("src/core/template")
+    ) {
       bump("template");
       continue;
     }
-    if (file.startsWith("src/core/hook") || file.startsWith("src/commands/hook")) {
+    if (
+      file.startsWith("src/core/hook") ||
+      file.startsWith("src/commands/hook")
+    ) {
       bump("hook");
       continue;
     }
@@ -202,7 +229,9 @@ function inferCommitType(files: string[]): string {
 
   const allDocs = files.every(
     (file) =>
-      file.toLowerCase().includes("readme") || file.startsWith("docs/") || file.endsWith(".md")
+      file.toLowerCase().includes("readme") ||
+      file.startsWith("docs/") ||
+      file.endsWith(".md")
   );
   if (allDocs) {
     return "docs";
@@ -218,11 +247,19 @@ function inferCommitType(files: string[]): string {
     return "test";
   }
 
-  if (files.some((file) => file.startsWith("src/commands/") || file === "src/cli.ts")) {
+  if (
+    files.some(
+      (file) => file.startsWith("src/commands/") || file === "src/cli.ts"
+    )
+  ) {
     return "feat";
   }
 
-  if (files.some((file) => file.startsWith("src/core/") || file.startsWith("src/utils/"))) {
+  if (
+    files.some(
+      (file) => file.startsWith("src/core/") || file.startsWith("src/utils/")
+    )
+  ) {
     return "refactor";
   }
 
@@ -238,7 +275,9 @@ function buildHeuristicCommitSuggestion(files: string[]): CommitSuggestion {
       file.startsWith("docs/")
   );
 
-  const internalFiles = files.filter((file) => !userVisibleFiles.includes(file));
+  const internalFiles = files.filter(
+    (file) => !userVisibleFiles.includes(file)
+  );
   const scope = inferScopeFromFiles(files);
   const type = inferCommitType(files);
   const scopeLabel = scope ?? "项目";
@@ -265,7 +304,10 @@ function buildHeuristicCommitSuggestion(files: string[]): CommitSuggestion {
   };
 }
 
-function isCommitSuggestionTooGeneric(suggestion: CommitSuggestion, files: string[]): boolean {
+function isCommitSuggestionTooGeneric(
+  suggestion: CommitSuggestion,
+  files: string[]
+): boolean {
   const subject = suggestion.subject.trim();
 
   const genericSubjectPatterns = [
@@ -292,14 +334,18 @@ function isCommitSuggestionTooGeneric(suggestion: CommitSuggestion, files: strin
   return false;
 }
 
-function normalizeCommitSuggestion(input: Partial<CommitSuggestion> | undefined): CommitSuggestion {
+function normalizeCommitSuggestion(
+  input: Partial<CommitSuggestion> | undefined
+): CommitSuggestion {
   const inputType = input?.type?.trim().toLowerCase();
   const inputScope = input?.scope?.trim();
   const rawSubject = input?.subject?.trim() || "待人工复核本次代码改动";
   const unwrapped = unwrapCommitHeaderPrefix(rawSubject);
 
   const typeCandidate = unwrapped.type || inputType || "chore";
-  const type = ALLOWED_COMMIT_TYPES.has(typeCandidate) ? typeCandidate : "chore";
+  const type = ALLOWED_COMMIT_TYPES.has(typeCandidate)
+    ? typeCandidate
+    : "chore";
   const scope = inputScope || unwrapped.scope || undefined;
   const subject = normalizeSingleLineText(unwrapped.subject, 30);
 
@@ -321,7 +367,9 @@ export function createFallbackReviewResult(diff: string): ReviewResult {
     summary: `检测到 ${fileCount} 个文件的变更，建议在提交前手动复查核心逻辑与测试覆盖。`,
     riskItems: ["AI 返回不可解析，已降级为基础建议。"],
     testSuggestions: ["执行相关单元测试并手动验证关键路径。"],
-    commitSuggestion: normalizeCommitSuggestion(createFallbackCommitSuggestion(diff))
+    commitSuggestion: normalizeCommitSuggestion(
+      createFallbackCommitSuggestion(diff)
+    )
   };
 }
 
@@ -334,7 +382,10 @@ export function formatConventionalCommit(suggestion: CommitSuggestion): string {
   return `${header}\n\n${suggestion.body}`;
 }
 
-export function parseReviewResponse(rawText: string, diff: string): ReviewResult {
+export function parseReviewResponse(
+  rawText: string,
+  diff: string
+): ReviewResult {
   const fallback = createFallbackReviewResult(diff);
   try {
     const parsed = JSON.parse(rawText) as Partial<ReviewResult>;
@@ -343,12 +394,15 @@ export function parseReviewResponse(rawText: string, diff: string): ReviewResult
       ? parsed.riskItems.map((item) => String(item).trim()).filter(Boolean)
       : [];
     const testSuggestions = Array.isArray(parsed.testSuggestions)
-      ? parsed.testSuggestions.map((item) => String(item).trim()).filter(Boolean)
+      ? parsed.testSuggestions
+          .map((item) => String(item).trim())
+          .filter(Boolean)
       : [];
     return {
       summary: summary || fallback.summary,
       riskItems: riskItems.length > 0 ? riskItems : fallback.riskItems,
-      testSuggestions: testSuggestions.length > 0 ? testSuggestions : fallback.testSuggestions,
+      testSuggestions:
+        testSuggestions.length > 0 ? testSuggestions : fallback.testSuggestions,
       commitSuggestion: normalizeCommitSuggestion(parsed.commitSuggestion)
     };
   } catch {
@@ -356,8 +410,13 @@ export function parseReviewResponse(rawText: string, diff: string): ReviewResult
   }
 }
 
-export function parseCommitSuggestionResponse(rawText: string, diff: string): CommitSuggestion {
-  const fallback = normalizeCommitSuggestion(createFallbackCommitSuggestion(diff));
+export function parseCommitSuggestionResponse(
+  rawText: string,
+  diff: string
+): CommitSuggestion {
+  const fallback = normalizeCommitSuggestion(
+    createFallbackCommitSuggestion(diff)
+  );
 
   try {
     const parsed = JSON.parse(rawText) as
@@ -532,7 +591,9 @@ export class AiService {
 
     await writeDb((draft) => {
       const now = new Date().toISOString();
-      const index = draft.ai.profiles.findIndex((item) => item.name === profileName);
+      const index = draft.ai.profiles.findIndex(
+        (item) => item.name === profileName
+      );
       const existing = index >= 0 ? draft.ai.profiles[index] : null;
 
       const merged: AiProfile = {
@@ -541,7 +602,9 @@ export class AiService {
         baseURL: input.baseURL?.trim() || existing?.baseURL || DEFAULT_BASE_URL,
         apiKey: input.apiKey?.trim() || existing?.apiKey || "",
         model: input.model?.trim() || existing?.model || DEFAULT_MODEL,
-        timeoutMs: Math.trunc(input.timeoutMs ?? existing?.timeoutMs ?? DEFAULT_TIMEOUT),
+        timeoutMs: Math.trunc(
+          input.timeoutMs ?? existing?.timeoutMs ?? DEFAULT_TIMEOUT
+        ),
         createdAt: existing?.createdAt || now,
         updatedAt: now
       };
@@ -582,7 +645,9 @@ export class AiService {
 
     let active: AiProfile | null = null;
     await writeDb((draft) => {
-      const found = draft.ai.profiles.find((item) => item.id === target || item.name === target);
+      const found = draft.ai.profiles.find(
+        (item) => item.id === target || item.name === target
+      );
       if (!found) {
         throw new CliError(`未找到 AI 配置: ${target}`);
       }
@@ -594,6 +659,58 @@ export class AiService {
       throw new CliError(`未找到 AI 配置: ${target}`);
     }
     return active;
+  }
+
+  async removeConfig(identifier: string): Promise<RemoveAiConfigResult> {
+    const target = identifier.trim();
+    if (!target) {
+      throw new CliError("配置标识不能为空");
+    }
+
+    let removed: AiProfile | null = null;
+    let active: AiProfile | null = null;
+
+    await writeDb((draft) => {
+      const index = draft.ai.profiles.findIndex(
+        (item) => item.id === target || item.name === target
+      );
+      if (index < 0) {
+        throw new CliError(`未找到 AI 配置: ${target}`);
+      }
+
+      const [profile] = draft.ai.profiles.splice(index, 1);
+      if (!profile) {
+        throw new CliError(`未找到 AI 配置: ${target}`);
+      }
+      removed = profile;
+
+      if (draft.ai.activeProfileId === profile.id) {
+        draft.ai.activeProfileId = draft.ai.profiles[0]?.id ?? null;
+      } else if (draft.ai.activeProfileId) {
+        const exists = draft.ai.profiles.some(
+          (item) => item.id === draft.ai.activeProfileId
+        );
+        if (!exists) {
+          draft.ai.activeProfileId = draft.ai.profiles[0]?.id ?? null;
+        }
+      } else if (draft.ai.profiles.length > 0) {
+        draft.ai.activeProfileId = draft.ai.profiles[0]?.id ?? null;
+      }
+
+      active =
+        draft.ai.profiles.find(
+          (item) => item.id === draft.ai.activeProfileId
+        ) ?? null;
+    });
+
+    if (!removed) {
+      throw new CliError(`未找到 AI 配置: ${target}`);
+    }
+
+    return {
+      removed,
+      active
+    };
   }
 
   private async createClient(): Promise<{ client: OpenAI; config: AiConfig }> {
@@ -647,7 +764,9 @@ export class AiService {
 
     const changedFiles = extractChangedFiles(diff);
     const { client, config } = await this.createClient();
-    const runCommitSuggestion = async (userPrompt: string): Promise<CommitSuggestion> => {
+    const runCommitSuggestion = async (
+      userPrompt: string
+    ): Promise<CommitSuggestion> => {
       const response = await client.chat.completions.create({
         model: config.model,
         temperature: 0,
@@ -661,7 +780,9 @@ export class AiService {
       return parseCommitSuggestionResponse(rawText, diff);
     };
 
-    let suggestion = await runCommitSuggestion(buildCommitUserPrompt(diff, changedFiles));
+    let suggestion = await runCommitSuggestion(
+      buildCommitUserPrompt(diff, changedFiles)
+    );
 
     if (isCommitSuggestionTooGeneric(suggestion, changedFiles)) {
       suggestion = await runCommitSuggestion(
@@ -670,7 +791,9 @@ export class AiService {
     }
 
     if (isCommitSuggestionTooGeneric(suggestion, changedFiles)) {
-      suggestion = normalizeCommitSuggestion(buildHeuristicCommitSuggestion(changedFiles));
+      suggestion = normalizeCommitSuggestion(
+        buildHeuristicCommitSuggestion(changedFiles)
+      );
     }
 
     return formatConventionalCommit(suggestion);

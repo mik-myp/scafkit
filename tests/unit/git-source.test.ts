@@ -6,17 +6,23 @@ import {
 
 describe("normalizeTemplateGitSource", () => {
   it("normalizes github https source", () => {
-    const normalized = normalizeTemplateGitSource("https://github.com/openai/scafkit");
+    const normalized = normalizeTemplateGitSource(
+      "https://github.com/openai/scafkit"
+    );
     expect(normalized).toBe("https://github.com/openai/scafkit.git");
   });
 
   it("normalizes gitlab ssh source", () => {
-    const normalized = normalizeTemplateGitSource("git@gitlab.com:group/scafkit");
+    const normalized = normalizeTemplateGitSource(
+      "git@gitlab.com:group/scafkit"
+    );
     expect(normalized).toBe("git@gitlab.com:group/scafkit.git");
   });
 
   it("normalizes gitee host-only source", () => {
-    const normalized = normalizeTemplateGitSource("gitee.com/acme/template-repo");
+    const normalized = normalizeTemplateGitSource(
+      "gitee.com/acme/template-repo"
+    );
     expect(normalized).toBe("https://gitee.com/acme/template-repo.git");
   });
 
@@ -26,9 +32,9 @@ describe("normalizeTemplateGitSource", () => {
   });
 
   it("throws for unsupported protocol", () => {
-    expect(() => normalizeTemplateGitSource("http://github.com/openai/scafkit")).toThrow(
-      "仅支持 HTTPS 或 SSH 仓库地址"
-    );
+    expect(() =>
+      normalizeTemplateGitSource("http://github.com/openai/scafkit")
+    ).toThrow("仅支持 HTTPS 或 SSH 仓库地址");
   });
 });
 

@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.1.0] - 2026-02-28
+
 ### Added
+
 - Initial release of `scafkit` CLI.
 - Local JSON database support (`~/.scafkit/db.json`) with schema migration.
 - Template management commands:

@@ -77,12 +77,18 @@ async function collectVariables(
   return merged;
 }
 
-async function renderDirectory(sourceDir: string, targetDir: string, variables: Record<string, string>) {
+async function renderDirectory(
+  sourceDir: string,
+  targetDir: string,
+  variables: Record<string, string>
+) {
   await fs.ensureDir(targetDir);
   const entries = await fs.readdir(sourceDir, { withFileTypes: true });
   for (const entry of entries) {
     const sourcePath = path.join(sourceDir, entry.name);
-    const targetName = entry.name.endsWith(".ejs") ? entry.name.slice(0, -4) : entry.name;
+    const targetName = entry.name.endsWith(".ejs")
+      ? entry.name.slice(0, -4)
+      : entry.name;
     const targetPath = path.join(targetDir, targetName);
 
     if (entry.isDirectory()) {
@@ -111,9 +117,16 @@ export class ProjectGenerator {
   constructor(private readonly templateService = new TemplateService()) {}
 
   async generate(input: GenerateProjectInput): Promise<string> {
-    const template = await this.templateService.getTemplateById(input.templateId);
-    const sourceDir = await this.templateService.resolveTemplateDir(template.id);
-    const targetDir = path.resolve(input.dest ?? process.cwd(), input.projectName);
+    const template = await this.templateService.getTemplateById(
+      input.templateId
+    );
+    const sourceDir = await this.templateService.resolveTemplateDir(
+      template.id
+    );
+    const targetDir = path.resolve(
+      input.dest ?? process.cwd(),
+      input.projectName
+    );
 
     if (await fs.pathExists(targetDir)) {
       const files = await fs.readdir(targetDir);
@@ -123,7 +136,11 @@ export class ProjectGenerator {
     }
 
     await fs.ensureDir(targetDir);
-    const variables = await collectVariables(template, input.projectName, input.variables ?? {});
+    const variables = await collectVariables(
+      template,
+      input.projectName,
+      input.variables ?? {}
+    );
     await renderDirectory(sourceDir, targetDir, variables);
     return targetDir;
   }

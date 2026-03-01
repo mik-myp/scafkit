@@ -30,7 +30,10 @@ describe("hook service", () => {
     const fakeAi = {
       generateCommitMessage: async () => "feat(cli): 测试 hook"
     };
-    const service = new HookService(new GitService(repoDir), fakeAi as unknown as AiService);
+    const service = new HookService(
+      new GitService(repoDir),
+      fakeAi as unknown as AiService
+    );
 
     const installed = await service.install();
     expect(installed.installed).toBe(true);
@@ -50,7 +53,10 @@ describe("hook service", () => {
     const fakeAi = {
       generateCommitMessage: async () => "feat(core): 新增自动提交信息"
     };
-    const service = new HookService(new GitService(repoDir), fakeAi as unknown as AiService);
+    const service = new HookService(
+      new GitService(repoDir),
+      fakeAi as unknown as AiService
+    );
     const messageFile = path.join(repoDir, ".git", "COMMIT_EDITMSG");
 
     const result = await service.runCommitMsgHook(messageFile);
@@ -69,7 +75,10 @@ describe("hook service", () => {
         throw new Error("network error");
       }
     };
-    const service = new HookService(new GitService(repoDir), fakeAi as unknown as AiService);
+    const service = new HookService(
+      new GitService(repoDir),
+      fakeAi as unknown as AiService
+    );
     const messageFile = path.join(repoDir, ".git", "COMMIT_EDITMSG");
     await fs.writeFile(messageFile, "initial", "utf-8");
 

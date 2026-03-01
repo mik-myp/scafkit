@@ -1,5 +1,9 @@
 ﻿import { describe, expect, it } from "vitest";
-import { CURRENT_DB_VERSION, createDefaultDb, migrateDb } from "../../src/db/migrations.js";
+import {
+  CURRENT_DB_VERSION,
+  createDefaultDb,
+  migrateDb
+} from "../../src/db/migrations.js";
 
 describe("db migrations", () => {
   it("returns default db when input is undefined", () => {

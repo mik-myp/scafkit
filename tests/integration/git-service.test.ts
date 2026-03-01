@@ -36,7 +36,9 @@ describe("git service commit/push", () => {
     await git.add(["a.txt"]);
 
     const service = new GitService(repoDir);
-    await service.commitStaged("feat(cli): 支持自动提交并推送\n\n补充首次推送上游设置");
+    await service.commitStaged(
+      "feat(cli): 支持自动提交并推送\n\n补充首次推送上游设置"
+    );
     await service.pushCurrentBranch();
 
     const branch = (await git.revparse(["--abbrev-ref", "HEAD"])).trim();

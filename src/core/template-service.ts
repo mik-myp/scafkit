@@ -6,7 +6,10 @@ import { readDb, writeDb } from "../db/store.js";
 import type { TemplateRecord, TemplateVariable } from "../types.js";
 import { asErrorMessage, CliError } from "../utils/errors.js";
 import { getScafkitPaths } from "../utils/path.js";
-import { buildTemplateGitSourceCandidates, normalizeTemplateGitSource } from "../utils/git-source.js";
+import {
+  buildTemplateGitSourceCandidates,
+  normalizeTemplateGitSource
+} from "../utils/git-source.js";
 
 export interface AddTemplateInput {
   id?: string;
@@ -108,7 +111,9 @@ export class TemplateService {
       await this.syncTemplate(record.id);
     } catch (error) {
       await writeDb((draft) => {
-        draft.templates = draft.templates.filter((item) => item.id !== record.id);
+        draft.templates = draft.templates.filter(
+          (item) => item.id !== record.id
+        );
       });
       throw error;
     }
@@ -116,7 +121,10 @@ export class TemplateService {
     return created;
   }
 
-  async updateTemplate(id: string, input: UpdateTemplateInput): Promise<TemplateRecord> {
+  async updateTemplate(
+    id: string,
+    input: UpdateTemplateInput
+  ): Promise<TemplateRecord> {
     const current = await this.getTemplateById(id);
     const updatedSource = input.source ?? current.source;
     const normalizedSource = normalizeTemplateGitSource(updatedSource);
@@ -127,7 +135,9 @@ export class TemplateService {
         throw new CliError(`未找到模板: ${id}`);
       }
       if (input.name) {
-        const conflict = draft.templates.some((item, i) => i !== index && item.name === input.name);
+        const conflict = draft.templates.some(
+          (item, i) => i !== index && item.name === input.name
+        );
         if (conflict) {
           throw new CliError(`模板名称已存在: ${input.name}`);
         }
@@ -169,7 +179,11 @@ export class TemplateService {
 
     await fs.remove(tempDir);
     try {
-      const usedSource = await cloneGitTemplate(sourceCandidates, template.branch, tempDir);
+      const usedSource = await cloneGitTemplate(
+        sourceCandidates,
+        template.branch,
+        tempDir
+      );
       if (template.subPath) {
         const subDir = path.join(tempDir, template.subPath);
         if (!(await fs.pathExists(subDir))) {
@@ -205,7 +219,9 @@ export class TemplateService {
       await this.syncTemplate(template.id);
     }
 
-    const resolvedDir = template.subPath ? path.join(baseDir, template.subPath) : baseDir;
+    const resolvedDir = template.subPath
+      ? path.join(baseDir, template.subPath)
+      : baseDir;
     const exists = await fs.pathExists(resolvedDir);
     if (!exists) {
       throw new CliError(`模板目录不存在: ${resolvedDir}`);

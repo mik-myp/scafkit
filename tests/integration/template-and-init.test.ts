@@ -57,7 +57,10 @@ describe("template service + project generator", () => {
     });
 
     expect(outputDir).toBe(path.join(outputRoot, "demo-app"));
-    const readme = await fs.readFile(path.join(outputDir, "README.md"), "utf-8");
+    const readme = await fs.readFile(
+      path.join(outputDir, "README.md"),
+      "utf-8"
+    );
     expect(readme).toContain("# demo-app");
     expect(readme).toContain("owner=kirito");
   });
