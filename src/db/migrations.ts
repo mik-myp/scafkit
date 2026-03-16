@@ -6,7 +6,13 @@ import {
   appDbSchema,
   templateRecordSchema
 } from "./schemas.js";
-import type { AiConfig, AiProfile, AiSettings, AppDB, TemplateRecord } from "../types.js";
+import type {
+  AiConfig,
+  AiProfile,
+  AiSettings,
+  AppDB,
+  TemplateRecord
+} from "../types.js";
 
 export const CURRENT_DB_VERSION = 2;
 
@@ -91,11 +97,14 @@ function sanitizeAiSettings(input: unknown): AiSettings {
   }
 
   const activeProfileIdRaw =
-    typeof candidate.activeProfileId === "string" ? candidate.activeProfileId : null;
+    typeof candidate.activeProfileId === "string"
+      ? candidate.activeProfileId
+      : null;
   const activeProfileId =
-    activeProfileIdRaw && profiles.some((item) => item.id === activeProfileIdRaw)
+    activeProfileIdRaw &&
+    profiles.some((item) => item.id === activeProfileIdRaw)
       ? activeProfileIdRaw
-      : profiles[0]?.id ?? null;
+      : (profiles[0]?.id ?? null);
 
   const settings: AiSettings = {
     activeProfileId,
@@ -118,7 +127,9 @@ export function migrateDb(rawData: unknown): AppDB {
   }
 
   const candidate =
-    typeof rawData === "object" && rawData !== null ? (rawData as Record<string, unknown>) : {};
+    typeof rawData === "object" && rawData !== null
+      ? (rawData as Record<string, unknown>)
+      : {};
 
   const migrated: AppDB = {
     version: CURRENT_DB_VERSION,

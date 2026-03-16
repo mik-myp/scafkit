@@ -1,7 +1,9 @@
 ﻿import { CliError } from "./errors.js";
 
 const SUPPORTED_GIT_HOSTS = ["github.com", "gitlab.com", "gitee.com"] as const;
-const SUPPORTED_GIT_HOSTS_SET: ReadonlySet<string> = new Set(SUPPORTED_GIT_HOSTS);
+const SUPPORTED_GIT_HOSTS_SET: ReadonlySet<string> = new Set(
+  SUPPORTED_GIT_HOSTS
+);
 const SCP_LIKE_PATTERN = /^(?<user>[^@\s]+)@(?<host>[^:\s]+):(?<repoPath>.+)$/;
 const HOST_ONLY_PATTERN = /^(?<host>[^/\s]+\.[^/\s]+)\/(?<repoPath>.+)$/;
 const LOCAL_PATH_HINT_PATTERN = /^(\.|\/|~|[A-Za-z]:[\\/])/;
@@ -16,7 +18,10 @@ interface ParsedSource {
 }
 
 function normalizeRepoPath(repoPathRaw: string): string {
-  const repoPath = repoPathRaw.trim().replace(/^\/+|\/+$/g, "").replace(/\.git$/i, "");
+  const repoPath = repoPathRaw
+    .trim()
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/\.git$/i, "");
   const segments = repoPath.split("/").filter(Boolean);
 
   if (segments.length < 2) {
@@ -141,16 +146,25 @@ export function buildTemplateGitSourceCandidates(source: string): string[] {
   switch (parsed.kind) {
     case "url":
       if (parsed.protocol === "https") {
-        return [toHttpsSource(parsed.host!, parsed.repoPath!), toScpSource(parsed.host!, parsed.repoPath!, parsed.user)];
+        return [
+          toHttpsSource(parsed.host!, parsed.repoPath!),
+          toScpSource(parsed.host!, parsed.repoPath!, parsed.user)
+        ];
       }
-      return [`ssh://${parsed.user}@${parsed.host}/${parsed.repoPath}`, toHttpsSource(parsed.host!, parsed.repoPath!)];
+      return [
+        `ssh://${parsed.user}@${parsed.host}/${parsed.repoPath}`,
+        toHttpsSource(parsed.host!, parsed.repoPath!)
+      ];
     case "scp":
       return [
         toScpSource(parsed.host!, parsed.repoPath!, parsed.user),
         toHttpsSource(parsed.host!, parsed.repoPath!)
       ];
     case "host":
-      return [toHttpsSource(parsed.host!, parsed.repoPath!), toScpSource(parsed.host!, parsed.repoPath!)];
+      return [
+        toHttpsSource(parsed.host!, parsed.repoPath!),
+        toScpSource(parsed.host!, parsed.repoPath!)
+      ];
     case "repo": {
       const candidates: string[] = [];
       for (const host of SUPPORTED_GIT_HOSTS) {

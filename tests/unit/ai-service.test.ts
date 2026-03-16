@@ -34,7 +34,9 @@ describe("ai service helpers", () => {
 
     expect(result.commitSuggestion.type).toBe("fix");
     expect(result.summary).toContain("优化模板同步流程");
-    expect(Array.from(result.commitSuggestion.subject).length).toBeLessThanOrEqual(30);
+    expect(
+      Array.from(result.commitSuggestion.subject).length
+    ).toBeLessThanOrEqual(30);
     expect(result.commitSuggestion.body).toBeUndefined();
   });
 
